@@ -1,6 +1,11 @@
 pipeline {
     agent any
 
+    // Isse WSL se git push hote hi Jenkins har 1-2 minute me check karke auto build chalu kar dega
+    triggers {
+        pollSCM('*/2 * * * *') 
+    }
+
     environment {
         AWS_REGION         = 'ap-south-1'
         ECR_REPO_URL       = '081671069989.dkr.ecr.ap-south-1.amazonaws.com/employee-3-tier'
@@ -26,7 +31,8 @@ pipeline {
 
         stage('AWS ECR Login') {
             steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                // standard format bina kisi extra plugin ke aapki keys ko read karne ke liye
+                withCredentials([usernamePassword(credentialsId: "${AWS_CREDENTIALS_ID}", usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                     sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO_URL}"
                 }
             }
@@ -35,11 +41,11 @@ pipeline {
         stage('Build & Push Images') {
             steps {
                 script {
-                    echo 'Building Backend Image...'
+                    echo 'Building & Pushing Backend Image...'
                     sh "docker build -t ${ECR_REPO_URL}:backend -f backend/Dockerfile ."
                     sh "docker push ${ECR_REPO_URL}:backend"
 
-                    echo 'Building Frontend Image...'
+                    echo 'Building & Pushing Frontend Image...'
                     sh "docker build -t ${ECR_REPO_URL}:frontend -f frontend/Dockerfile ."
                     sh "docker push ${ECR_REPO_URL}:frontend"
                 }
@@ -48,7 +54,7 @@ pipeline {
 
         stage('Deploy to AWS ECS') {
             steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                withCredentials([usernamePassword(credentialsId: "${AWS_CREDENTIALS_ID}", usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                     echo 'Updating ECS Service to deploy new containers...'
                     sh "aws ecs update-service --cluster ${ECS_CLUSTER} --service ${ECS_SERVICE} --force-new-deployment --region ${AWS_REGION}"
                 }
