@@ -1,7 +1,6 @@
 pipeline {
     agent any
 
-    // Isse WSL se git push hote hi Jenkins har 1-2 minute me check karke auto build chalu kar dega
     triggers {
         pollSCM('*/2 * * * *') 
     }
@@ -11,7 +10,7 @@ pipeline {
         ECR_REPO_URL       = '081671069989.dkr.ecr.ap-south-1.amazonaws.com/employee-3-tier'
         ECS_CLUSTER        = 'employee-3-tier-cluster'
         ECS_SERVICE        = 'employee-3-tier-service'
-        AWS_CREDENTIALS_ID = 'aws-credentials' // Jenkins Credentials ID
+        AWS_CREDENTIALS_ID = 'aws-credentials'
     }
 
     stages {
@@ -31,9 +30,20 @@ pipeline {
 
         stage('AWS ECR Login') {
             steps {
-                // standard format bina kisi extra plugin ke aapki keys ko read karne ke liye
                 withCredentials([usernamePassword(credentialsId: "${AWS_CREDENTIALS_ID}", usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
-                    sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO_URL}"
+                    script {
+                        // Agar system me AWS CLI nahi mila, toh hum binary direct use karenge
+                        sh '''
+                        if ! command -v aws &> /dev/null; then
+                            echo "AWS CLI not found globally. Setting up local binary fallback..."
+                            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+                            unzip -q awscliv2.zip
+                            ./aws/install -i ./aws-cli-bin -b ./aws-cli-executable --update
+                            export PATH=$PATH:$(pwd)/aws-cli-executable
+                        fi
+                        ./aws-cli-executable/aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO_URL}
+                        '''
+                    }
                 }
             }
         }
@@ -56,7 +66,10 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: "${AWS_CREDENTIALS_ID}", usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                     echo 'Updating ECS Service to deploy new containers...'
-                    sh "aws ecs update-service --cluster ${ECS_CLUSTER} --service ${ECS_SERVICE} --force-new-deployment --region ${AWS_REGION}"
+                    sh '''
+                    export PATH=$PATH:$(pwd)/aws-cli-executable
+                    ./aws-cli-executable/aws ecs update-service --cluster ${ECS_CLUSTER} --service ${ECS_SERVICE} --force-new-deployment --region ${AWS_REGION}
+                    '''
                 }
             }
         }
