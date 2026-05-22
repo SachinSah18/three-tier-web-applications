@@ -32,17 +32,14 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: "${AWS_CREDENTIALS_ID}", usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                     script {
-                        // Agar system me AWS CLI nahi mila, toh hum binary direct use karenge
-                        sh '''
-                        if ! command -v aws &> /dev/null; then
-                            echo "AWS CLI not found globally. Setting up local binary fallback..."
-                            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-                            unzip -q awscliv2.zip
-                            ./aws/install -i ./aws-cli-bin -b ./aws-cli-executable --update
-                            export PATH=$PATH:$(pwd)/aws-cli-executable
-                        fi
-                        ./aws-cli-executable/aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO_URL}
-                        '''
+                        echo 'Logging into AWS ECR using Dockerized AWS CLI...'
+                        // Docker container ka use karke AWS token nikalenge aur login karenge
+                        sh """
+                        docker run --rm \
+                          -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+                          -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+                          amazon/aws-cli ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPO_URL}
+                        """
                     }
                 }
             }
@@ -65,11 +62,13 @@ pipeline {
         stage('Deploy to AWS ECS') {
             steps {
                 withCredentials([usernamePassword(credentialsId: "${AWS_CREDENTIALS_ID}", usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
-                    echo 'Updating ECS Service to deploy new containers...'
-                    sh '''
-                    export PATH=$PATH:$(pwd)/aws-cli-executable
-                    ./aws-cli-executable/aws ecs update-service --cluster ${ECS_CLUSTER} --service ${ECS_SERVICE} --force-new-deployment --region ${AWS_REGION}
-                    '''
+                    echo 'Updating ECS Service using Dockerized AWS CLI...'
+                    sh """
+                    docker run --rm \
+                      -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+                      -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+                      amazon/aws-cli ecs update-service --cluster ${ECS_CLUSTER} --service ${ECS_SERVICE} --force-new-deployment --region ${AWS_REGION}
+                    """
                 }
             }
         }
