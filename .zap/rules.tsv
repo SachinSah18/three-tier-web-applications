@@ -1,0 +1,2 @@
+# OWASP ZAP baseline ignore file.
+# Add alert IDs here only after documenting why the finding is acceptable.
